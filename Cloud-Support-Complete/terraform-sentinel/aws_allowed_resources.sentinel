@@ -1,0 +1,57 @@
+import "tfplan"
+
+# Policy: AWS Allowed Resources
+# Description: Restricts which AWS resources can be created
+# Allowed resources: EC2, RDS, S3, Lambda, VPC, Security Groups, Load Balancers
+
+# List of approved AWS resource types
+approved_resources = {
+  "aws_instance": true,
+  "aws_db_instance": true,
+  "aws_s3_bucket": true,
+  "aws_lambda_function": true,
+  "aws_vpc": true,
+  "aws_security_group": true,
+  "aws_security_group_rule": true,
+  "aws_lb": true,
+  "aws_lb_target_group": true,
+  "aws_subnet": true,
+  "aws_route_table": true,
+  "aws_internet_gateway": true,
+  "aws_nat_gateway": true,
+  "aws_elasticip": true,
+  "aws_eip": true,
+  "aws_acm_certificate": true,
+  "aws_cloudwatch_log_group": true,
+  "aws_iam_role": true,
+  "aws_iam_role_policy": true,
+  "aws_iam_policy_attachment": true,
+  "aws_efs_file_system": true,
+  "aws_autoscaling_group": true,
+  "aws_launch_template": true,
+  "aws_s3_bucket_versioning": true,
+  "aws_s3_bucket_server_side_encryption_configuration": true,
+  "aws_s3_bucket_public_access_block": true,
+}
+
+# Find all resources being created or updated
+all_resources = filter tfplan.resource_changes as _, rc {
+  rc.change.actions contains "create" or rc.change.actions contains "update"
+}
+
+# Validate all resources are approved
+all_resources_approved = rule {
+  all all_resources as _, resource {
+    approved_resources[resource.type] is true
+  }
+}
+
+# Get list of unapproved resources for reporting
+unapproved_resources = filter tfplan.resource_changes as address, rc {
+  approved_resources[rc.type] is not true and
+  (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+main = rule {
+  length(unapproved_resources) == 0
+}

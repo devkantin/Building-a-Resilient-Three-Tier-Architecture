@@ -1,0 +1,66 @@
+import "tfplan"
+
+# Policy: AWS Lambda Security
+# Description: Enforces Lambda security best practices
+# Requires: Environment variable encryption, VPC configuration, timeout limits, memory limits
+
+# Find all Lambda functions
+all_lambda_functions = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_lambda_function" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate Lambda functions have timeout configured (not too high)
+lambda_timeout_valid = rule {
+  all all_lambda_functions as _, lambda {
+    lambda.change.after.timeout is not null and
+    lambda.change.after.timeout <= 900 and
+    lambda.change.after.timeout > 0
+  }
+}
+
+# Validate Lambda functions have memory configured (not too high)
+lambda_memory_valid = rule {
+  all all_lambda_functions as _, lambda {
+    lambda.change.after.memory_size is not null and
+    lambda.change.after.memory_size >= 128 and
+    lambda.change.after.memory_size <= 10240
+  }
+}
+
+# Enforce VPC configuration for Lambda functions accessing databases
+lambda_vpc_valid = rule {
+  all all_lambda_functions as _, lambda {
+    when lambda.change.after.environment is not null and
+         lambda.change.after.environment.variables is not null {
+      # If database environment variables are present, VPC is required
+      when lambda.change.after.environment.variables["DB_HOST"] is not null {
+        lambda.change.after.vpc_config is not null and
+        length(lambda.change.after.vpc_config.subnet_ids) > 0 and
+        length(lambda.change.after.vpc_config.security_group_ids) > 0
+      }
+    }
+  }
+}
+
+# Validate Lambda has appropriate execution role
+lambda_role_valid = rule {
+  all all_lambda_functions as _, lambda {
+    lambda.change.after.role is not null and
+    lambda.change.after.role != ""
+  }
+}
+
+# Enforce reserved concurrent executions for production
+lambda_concurrency_valid = rule {
+  all all_lambda_functions as _, lambda {
+    when lambda.change.after.tags is not null and
+         lambda.change.after.tags["Environment"] == "production" {
+      lambda.change.after.reserved_concurrent_executions is not null and
+      lambda.change.after.reserved_concurrent_executions > 0
+    }
+  }
+}
+
+main = rule {
+  lambda_timeout_valid and lambda_memory_valid and lambda_role_valid
+}

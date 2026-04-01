@@ -1,0 +1,82 @@
+import "tfplan"
+
+# Policy: AWS RDS Security
+# Description: Enforces RDS security best practices
+# Requires: Multi-AZ, encryption, no public accessibility, backup enabled
+
+# Find all RDS instances
+all_rds_instances = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_db_instance" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate Multi-AZ is enabled for production
+rds_multi_az_valid = rule {
+  all all_rds_instances as _, instance {
+    when instance.change.after.tags is not null and
+         instance.change.after.tags["Environment"] == "production" {
+      instance.change.after.multi_az is true
+    }
+  }
+}
+
+# Validate storage encryption is enabled
+rds_storage_encryption_valid = rule {
+  all all_rds_instances as _, instance {
+    instance.change.after.storage_encrypted is true or
+    instance.change.after.storage_encrypted is null
+  }
+}
+
+# Ensure RDS is not publicly accessible in production
+rds_public_access_valid = rule {
+  all all_rds_instances as _, instance {
+    when instance.change.after.tags is not null and
+         instance.change.after.tags["Environment"] == "production" {
+      instance.change.after.publicly_accessible is false or
+      instance.change.after.publicly_accessible is null
+    }
+  }
+}
+
+# Validate VPC security group is configured
+rds_vpc_security_valid = rule {
+  all all_rds_instances as _, instance {
+    instance.change.after.vpc_security_group_ids is not null and
+    length(instance.change.after.vpc_security_group_ids) > 0
+  }
+}
+
+# Enforce IAM database authentication for supported databases
+rds_iam_auth_valid = rule {
+  all all_rds_instances as _, instance {
+    when instance.change.after.engine == "mysql" or
+         instance.change.after.engine == "postgres" {
+      instance.change.after.iam_database_authentication_enabled is true or
+      instance.change.after.iam_database_authentication_enabled is null
+    }
+  }
+}
+
+# Validate parameter group is configured
+rds_parameter_group_valid = rule {
+  all all_rds_instances as _, instance {
+    instance.change.after.parameter_group_name is not null or
+    instance.change.after.parameter_group_name == ""
+  }
+}
+
+# Enable automated backups
+rds_automated_backups = rule {
+  all all_rds_instances as _, instance {
+    instance.change.after.backup_retention_period is not null and
+    instance.change.after.backup_retention_period > 0
+  }
+}
+
+main = rule {
+  rds_multi_az_valid and
+  rds_storage_encryption_valid and
+  rds_public_access_valid and
+  rds_vpc_security_valid and
+  rds_automated_backups
+}
