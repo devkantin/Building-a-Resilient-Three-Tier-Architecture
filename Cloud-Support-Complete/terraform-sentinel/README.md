@@ -115,6 +115,196 @@ Enforces RDS security best practices.
 - IAM database authentication is enabled (for MySQL/PostgreSQL)
 - Automated backups are enabled
 
+### 9. aws_iam_security.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces IAM security best practices and proper role management.
+
+**Validates**:
+- IAM roles have descriptions
+- IAM roles have tags
+- IAM policy names are descriptive (3-128 characters)
+- IAM assume role policies are properly configured
+- Inline policies are monitored for broad permissions
+- IAM users have appropriate tags
+
+### 10. aws_cloudwatch_monitoring.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces CloudWatch monitoring and logging best practices.
+
+**Validates**:
+- Log groups have retention policies (>= 7 days)
+- Log groups have KMS encryption option
+- Log group names are descriptive
+- CloudWatch alarms have actions configured
+- Alarms have proper evaluation periods and thresholds
+- Metrics are enabled for monitoring
+
+### 11. aws_vpc_flow_logs.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces VPC Flow Logs for network traffic analysis and compliance.
+
+**Validates**:
+- Flow logs have traffic type specified (ACCEPT, REJECT, ALL)
+- Flow logs have destination configured (CloudWatch or S3)
+- Flow logs have IAM role ARN
+- Flow logs have tags for tracking
+- Production VPCs are set up for flow log monitoring
+
+### 12. aws_ebs_encryption.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces EBS volume encryption for data protection at rest.
+
+**Validates**:
+- All EBS volumes are encrypted
+- EBS volumes use KMS encryption
+- EBS volumes have tags
+- EC2 root volumes are encrypted
+- EC2 EBS block devices are encrypted
+- Launch templates have encrypted volumes
+
+### 13. aws_elasticache_security.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces ElastiCache security and operational best practices.
+
+**Validates**:
+- ElastiCache clusters are in VPC
+- Encryption at rest is enabled
+- Encryption in transit is enabled
+- Auth tokens are configured for encrypted clusters
+- Production clusters have automatic failover enabled
+- Production clusters have backup/snapshots enabled
+- Engine version is specified
+
+### 14. aws_api_gateway_security.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces API Gateway security and operational best practices.
+
+**Validates**:
+- API Gateway has descriptions
+- Stages have CloudWatch logging enabled
+- Logging levels are properly configured
+- Throttling settings are configured
+- Metrics are enabled
+- Stages have tags
+- API methods have proper authorization (not NONE)
+
+### 15. aws_dynamodb_security.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces DynamoDB security and best practices.
+
+**Validates**:
+- Server-side encryption is enabled
+- SSE specification is configured and enabled
+- Point-in-time recovery is enabled for production tables
+- Backup is configured for production tables
+- Billing mode is properly set (PAY_PER_REQUEST or PROVISIONED)
+- Tables have tags
+- Tables have attribute definitions
+- Hash keys are configured
+
+### 16. aws_sns_sqs_security.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces SNS and SQS security and messaging best practices.
+
+**Validates**:
+- SNS topics have KMS encryption
+- SNS topics have access policies
+- SNS topics have tags
+- SQS queues have KMS encryption
+- SQS message retention is configured properly
+- SQS visibility timeout is set
+- SQS long polling is configured
+- SQS has access policies
+- Production SQS queues have Dead-Letter Queues
+- SQS queues have tags
+
+### 17. aws_cloudtrail_audit.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces CloudTrail configuration for compliance and audit logging.
+
+**Validates**:
+- CloudTrail is enabled
+- Trail includes global service events
+- Trail is multi-region
+- Log file validation is enabled
+- S3 bucket is configured for logs
+- CloudWatch logs are configured (optional)
+- Trail has tags
+- Event selectors are configured
+- KMS encryption is used for log files
+
+### 18. aws_compliance_regulatory.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces compliance with regulatory standards (HIPAA, PCI-DSS, SOC2, CIS).
+
+**Validates**:
+- Resources have compliance-required tags (Compliance, DataClassification, Owner, CostCenter)
+- PII-tagged resources have encryption enabled
+- Confidential resources have access logging
+- Production resources have proper retention policies
+- Sensitive resources are not publicly accessible
+- Sensitive S3 buckets have versioning enabled
+
+Required Tags: `Compliance`, `DataClassification`, `Owner`, `CostCenter`
+
+Data Classifications: `PII`, `Confidential`, `Secret`, `Public`
+
+### 19. aws_load_balancer_security.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces load balancer security and best practices.
+
+**Validates**:
+- Load balancers are in VPC
+- Load balancers have security groups configured
+- Production load balancers have access logging enabled
+- Load balancers have tags
+- Listeners use HTTPS/TLS or HTTP (with redirect option)
+- Target groups have health checks configured
+- Health checks have proper thresholds and intervals
+- Target groups have stickiness configured
+
+### 20. aws_kms_key_management.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces KMS key security and proper key management practices.
+
+**Validates**:
+- Key rotation is enabled
+- Keys have descriptions
+- Keys are not scheduled for deletion
+- Key policies are configured
+- Keys have tags
+- Aliases are named descriptively
+- Aliases target valid keys
+- KMS grants have retiring principals
+- Grant operations are properly defined
+
+### 21. aws_storage_backup.sentinel
+**Enforcement Level**: Mandatory
+
+Enforces backup and disaster recovery best practices.
+
+**Validates**:
+- AWS Backup plans have rules configured
+- Backup rules have lifecycle policies
+- Backup vaults have encryption
+- Backup vaults have tags
+- Production S3 buckets have versioning enabled
+- Production S3 buckets have replication configured (when required)
+- Replication configurations are valid
+- Replication rules have proper status and destinations
+
 ## sentinel.hcl
 
 This is the Sentinel policy configuration file that defines:

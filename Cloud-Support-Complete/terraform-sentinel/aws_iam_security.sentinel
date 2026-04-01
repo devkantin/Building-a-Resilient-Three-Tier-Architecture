@@ -1,0 +1,78 @@
+import "tfplan"
+
+# Policy: AWS IAM Security
+# Description: Enforces IAM security best practices
+# Requires: Proper role policies, no inline policies for sensitive roles, MFA enforcement
+
+# Find all IAM roles
+all_iam_roles = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_iam_role" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all IAM users
+all_iam_users = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_iam_user" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all IAM policies
+all_iam_policies = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_iam_policy" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all inline role policies (usually bad practice)
+all_inline_role_policies = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_iam_role_policy" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate IAM roles have description
+iam_roles_have_description = rule {
+  all all_iam_roles as _, role {
+    role.change.after.description is not null and
+    role.change.after.description != ""
+  }
+}
+
+# Validate IAM roles have tags
+iam_roles_have_tags = rule {
+  all all_iam_roles as _, role {
+    role.change.after.tags is not null and
+    length(role.change.after.tags) > 0
+  }
+}
+
+# Warn against inline policies (soft restriction)
+# Inline policies should be avoided for maintainability
+inline_policy_warning = rule {
+  all all_inline_role_policies as _, policy {
+    # Check that inline policies don't grant overly broad permissions
+    policy.change.after.policy is not null
+  }
+}
+
+# Validate IAM users have tags
+iam_users_have_tags = rule {
+  all all_iam_users as _, user {
+    user.change.after.tags is not null or
+    length(all_iam_users) == 0
+  }
+}
+
+# Validate policy names are descriptive
+iam_policy_naming = rule {
+  all all_iam_policies as _, policy {
+    length(policy.change.after.name) >= 3 and
+    length(policy.change.after.name) <= 128
+  }
+}
+
+# Assume role policy should restrict trust relationships
+iam_assume_role_security = rule {
+  all all_iam_roles as _, role {
+    role.change.after.assume_role_policy is not null and
+    role.change.after.assume_role_policy != ""
+  }
+}
+
+main = rule {
+  iam_roles_have_description and iam_policy_naming and iam_assume_role_security
+}

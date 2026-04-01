@@ -1,0 +1,96 @@
+import "tfplan"
+
+# Policy: AWS Compliance and Regulatory Standards
+# Description: Enforces compliance with regulatory standards (HIPAA, PCI-DSS, SOC2, CIS)
+# Requires: Proper tagging, encryption, access controls, audit logging
+
+# Find all resources
+all_resources = filter tfplan.resource_changes as _, rc {
+  rc.change.actions contains "create" or rc.change.actions contains "update"
+}
+
+# Compliance-required tags
+compliance_required_tags = ["Compliance", "DataClassification", "Owner", "CostCenter"]
+
+# Validate resources have compliance tags
+resource_compliance_tags = rule {
+  all all_resources as _, rc {
+    when (rc.type == "aws_db_instance" or
+          rc.type == "aws_s3_bucket" or
+          rc.type == "aws_rds_cluster" or
+          rc.type == "aws_dynamodb_table") {
+      rc.change.after.tags is not null and
+      all compliance_required_tags as tag {
+        rc.change.after.tags[tag] is not null
+      }
+    }
+  }
+}
+
+# Validate PII data classification tags
+pii_tagged_resources = rule {
+  all all_resources as _, rc {
+    when rc.change.after.tags is not null and
+         rc.change.after.tags["DataClassification"] == "PII" {
+      # PII resources must have encryption
+      (rc.type == "aws_db_instance" and rc.change.after.storage_encrypted is true) or
+      (rc.type == "aws_s3_bucket" and rc.change.after.server_side_encryption_configuration is not null) or
+      (rc.type == "aws_dynamodb_table" and rc.change.after.sse_specification is not null) or
+      rc.type not in ["aws_db_instance", "aws_s3_bucket", "aws_dynamodb_table"]
+    }
+  }
+}
+
+# Validate confidential data has access logging
+confidential_access_logging = rule {
+  all all_resources as _, rc {
+    when rc.change.after.tags is not null and
+         rc.change.after.tags["DataClassification"] == "Confidential" {
+      # Confidential resources should have access logging
+      (rc.type == "aws_s3_bucket" and rc.change.after.logging is not null) or
+      (rc.type == "aws_rds_cluster" and rc.change.after.enable_cloudwatch_logs_exports is not null) or
+      rc.type not in ["aws_s3_bucket", "aws_rds_cluster"]
+    }
+  }
+}
+
+# Validate production resources have proper retention
+production_retention = rule {
+  all all_resources as _, rc {
+    when rc.change.after.tags is not null and
+         rc.change.after.tags["Environment"] == "production" {
+      (rc.type == "aws_db_instance" and rc.change.after.backup_retention_period is not null) or
+      (rc.type == "aws_dynamodb_table" and rc.change.after.point_in_time_recovery_specification is not null) or
+      (rc.type == "aws_s3_bucket" and rc.change.after.versioning is not null) or
+      rc.type not in ["aws_db_instance", "aws_dynamodb_table", "aws_s3_bucket"]
+    }
+  }
+}
+
+# Validate no public access for sensitive resources
+sensitive_no_public_access = rule {
+  all all_resources as _, rc {
+    when rc.change.after.tags is not null and
+         rc.change.after.tags["DataClassification"] in ["PII", "Confidential", "Secret"] {
+      (rc.type == "aws_db_instance" and rc.change.after.publicly_accessible is false) or
+      (rc.type == "aws_s3_bucket" and rc.change.after.public_access_block is not null) or
+      rc.type not in ["aws_db_instance", "aws_s3_bucket"]
+    }
+  }
+}
+
+# Validate MFA delete for sensitive S3 buckets
+s3_mfa_delete = rule {
+  all all_resources as _, rc {
+    when rc.type == "aws_s3_bucket" and
+         rc.change.after.tags is not null and
+         rc.change.after.tags["DataClassification"] in ["PII", "Confidential"] {
+      rc.change.after.versioning is not null or
+      rc.change.after.versioning == ""
+    }
+  }
+}
+
+main = rule {
+  resource_compliance_tags and pii_tagged_resources and confidential_access_logging
+}

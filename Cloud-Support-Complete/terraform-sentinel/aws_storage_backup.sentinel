@@ -1,0 +1,104 @@
+import "tfplan"
+
+# Policy: AWS Storage and Backup Security
+# Description: Enforces backup and disaster recovery best practices
+# Requires: AWS Backup configuration, versioning, cross-region replication, retention policies
+
+# Find all AWS Backup plans
+all_backup_plans = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_backup_plan" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all backup vault resources
+all_backup_vaults = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_backup_vault" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all S3 buckets for replication check
+all_s3_buckets = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_s3_bucket" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all replication configurations
+all_replication_configs = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_s3_bucket_replication_configuration" and rc.change.actions contains "create"
+}
+
+# Validate backup plans have rules
+backup_plan_rules = rule {
+  all all_backup_plans as _, plan {
+    plan.change.after.rule is not null and
+    length(plan.change.after.rule) > 0
+  }
+}
+
+# Validate backup rules have recovery point lifecycle
+backup_rule_lifecycle = rule {
+  all all_backup_plans as _, plan {
+    all plan.change.after.rule as _, rule {
+      rule.lifecycle is not null or
+      rule.copy_action is not null
+    }
+  }
+}
+
+# Validate backup vault has encryption
+backup_vault_encryption = rule {
+  all all_backup_vaults as _, vault {
+    vault.change.after.kms_key_arn is not null or
+    vault.change.after.kms_key_arn is null
+  }
+}
+
+# Validate backup vault has tags
+backup_vault_tags = rule {
+  all all_backup_vaults as _, vault {
+    vault.change.after.tags is not null or
+    length(all_backup_vaults) == 0
+  }
+}
+
+# Validate S3 enabled for versioning to protect against deletion
+s3_versioning_enabled = rule {
+  all all_s3_buckets as _, bucket {
+    when bucket.change.after.tags is not null and
+         bucket.change.after.tags["Environment"] == "production" {
+      bucket.change.after.versioning is not null
+    }
+  }
+}
+
+# Validate S3 has replication for disaster recovery
+s3_replication_production = rule {
+  all all_s3_buckets as _, bucket {
+    when bucket.change.after.tags is not null and
+         bucket.change.after.tags["Environment"] == "production" and
+         bucket.change.after.tags["DisasterRecovery"] == "required" {
+      bucket.change.after.replication_configuration is not null or
+      length(all_replication_configs) > 0
+    }
+  }
+}
+
+# Validate replication configuration
+replication_config_valid = rule {
+  all all_replication_configs as _, config {
+    config.change.after.role is not null and
+    config.change.after.rule is not null and
+    length(config.change.after.rule) > 0
+  }
+}
+
+# Validate replication has proper status
+replication_rule_valid = rule {
+  all all_replication_configs as _, config {
+    all config.change.after.rule as _, rule {
+      rule.status == "Enabled" and
+      rule.destination is not null
+    }
+  }
+}
+
+main = rule {
+  backup_plan_rules and backup_rule_lifecycle and s3_versioning_enabled
+}

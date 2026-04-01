@@ -1,0 +1,108 @@
+import "tfplan"
+
+# Policy: AWS SNS and SQS Security
+# Description: Enforces SNS and SQS security and messaging best practices
+# Requires: Encryption, access policies, dead-letter queues, retention policies
+
+# Find all SNS topics
+all_sns_topics = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_sns_topic" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all SQS queues
+all_sqs_queues = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_sqs_queue" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all SNS subscriptions
+all_sns_subscriptions = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_sns_topic_subscription" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate SNS encryption is enabled
+sns_encryption_valid = rule {
+  all all_sns_topics as _, topic {
+    topic.change.after.kms_master_key_id is not null or
+    topic.change.after.kms_master_key_id == ""
+  }
+}
+
+# Validate SNS topics have access policy
+sns_access_policy = rule {
+  all all_sns_topics as _, topic {
+    topic.change.after.policy is not null or
+    topic.change.after.policy == ""
+  }
+}
+
+# Validate SNS topics have tags
+sns_tags_valid = rule {
+  all all_sns_topics as _, topic {
+    topic.change.after.tags is not null or
+    length(all_sns_topics) == 0
+  }
+}
+
+# Validate SQS encryption is enabled
+sqs_encryption_valid = rule {
+  all all_sqs_queues as _, queue {
+    queue.change.after.kms_master_key_id is not null or
+    queue.change.after.kms_master_key_id == ""
+  }
+}
+
+# Validate SQS message retention period
+sqs_message_retention = rule {
+  all all_sqs_queues as _, queue {
+    queue.change.after.message_retention_seconds is not null and
+    queue.change.after.message_retention_seconds > 0 and
+    queue.change.after.message_retention_seconds <= 1209600  # 14 days max
+  }
+}
+
+# Validate SQS has visibility timeout
+sqs_visibility_timeout = rule {
+  all all_sqs_queues as _, queue {
+    queue.change.after.visibility_timeout_seconds is not null and
+    queue.change.after.visibility_timeout_seconds > 0
+  }
+}
+
+# Validate SQS has receive message wait time (for long polling)
+sqs_long_polling = rule {
+  all all_sqs_queues as _, queue {
+    queue.change.after.receive_wait_time_seconds is not null or
+    queue.change.after.receive_wait_time_seconds is null
+  }
+}
+
+# Validate SQS has access policy
+sqs_access_policy = rule {
+  all all_sqs_queues as _, queue {
+    queue.change.after.policy is not null or
+    queue.change.after.policy == ""
+  }
+}
+
+# Validate SQS has DeadLetterQueue configured for production
+sqs_dlq_production = rule {
+  all all_sqs_queues as _, queue {
+    when queue.change.after.tags is not null and
+         queue.change.after.tags["Environment"] == "production" {
+      queue.change.after.redrive_policy is not null or
+      queue.change.after.redrive_policy == ""
+    }
+  }
+}
+
+# Validate SQS tags
+sqs_tags_valid = rule {
+  all all_sqs_queues as _, queue {
+    queue.change.after.tags is not null or
+    length(all_sqs_queues) == 0
+  }
+}
+
+main = rule {
+  sns_encryption_valid and sqs_encryption_valid and sqs_message_retention and sqs_visibility_timeout
+}

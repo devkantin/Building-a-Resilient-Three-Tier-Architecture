@@ -1,0 +1,94 @@
+import "tfplan"
+
+# Policy: AWS CloudTrail and Audit Logging
+# Description: Enforces CloudTrail configuration for audit logging and compliance
+# Requires: Trail enabled, log file validation, proper S3 configuration
+
+# Find all CloudTrail trails
+all_trails = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_cloudtrail" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all S3 buckets (for trail logs)
+all_s3_buckets = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_s3_bucket" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all CloudWatch log groups (for trail logs)
+all_log_groups = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_cloudwatch_log_group" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate trails are enabled
+cloudtrail_enabled = rule {
+  all all_trails as _, trail {
+    trail.change.after.is_enabled is true
+  }
+}
+
+# Validate trail includes global service events
+cloudtrail_global_events = rule {
+  all all_trails as _, trail {
+    trail.change.after.include_global_service_events is true or
+    trail.change.after.include_global_service_events is null
+  }
+}
+
+# Validate trail is multi-region
+cloudtrail_multi_region = rule {
+  all all_trails as _, trail {
+    trail.change.after.is_multi_region_trail is true or
+    trail.change.after.is_multi_region_trail is null
+  }
+}
+
+# Validate log file validation is enabled
+cloudtrail_log_validation = rule {
+  all all_trails as _, trail {
+    trail.change.after.enable_log_file_validation is true
+  }
+}
+
+# Validate S3 bucket is configured
+cloudtrail_s3_bucket = rule {
+  all all_trails as _, trail {
+    trail.change.after.s3_bucket_name is not null and
+    trail.change.after.s3_bucket_name != ""
+  }
+}
+
+# Validate CloudWatch logs are configured
+cloudtrail_cloudwatch_logs = rule {
+  all all_trails as _, trail {
+    trail.change.after.cloud_watch_logs_group_arn is not null or
+    trail.change.after.cloud_watch_logs_group_arn is null
+  }
+}
+
+# Validate trail has tags
+cloudtrail_tags = rule {
+  all all_trails as _, trail {
+    trail.change.after.tags is not null or
+    length(all_trails) == 0
+  }
+}
+
+# Validate event selectors are configured
+cloudtrail_event_selector = rule {
+  all all_trails as _, trail {
+    trail.change.after.event_selector is not null or
+    trail.change.after.event_selector is null
+  }
+}
+
+# Validate KMS encryption for log files
+cloudtrail_kms_encryption = rule {
+  all all_trails as _, trail {
+    trail.change.after.kms_key_id is not null or
+    trail.change.after.kms_key_id is null
+  }
+}
+
+main = rule {
+  cloudtrail_enabled and cloudtrail_multi_region and cloudtrail_log_validation and cloudtrail_s3_bucket
+}

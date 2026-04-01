@@ -1,0 +1,99 @@
+import "tfplan"
+
+# Policy: AWS DynamoDB Security
+# Description: Enforces DynamoDB security and best practices
+# Requires: Encryption, point-in-time recovery, backup, proper billing mode
+
+# Find all DynamoDB tables
+all_dynamodb_tables = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_dynamodb_table" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all DynamoDB global tables
+all_global_tables = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_dynamodb_global_table" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate encryption is enabled
+dynamodb_encryption_valid = rule {
+  all all_dynamodb_tables as _, table {
+    table.change.after.server_side_encryption is not null or
+    table.change.after.sse_specification is not null
+  }
+}
+
+# Validate server-side encryption is enabled
+dynamodb_sse_enabled = rule {
+  all all_dynamodb_tables as _, table {
+    when table.change.after.sse_specification is not null {
+      table.change.after.sse_specification.enabled is true
+    }
+  }
+}
+
+# Validate point-in-time recovery is enabled for production
+dynamodb_pitr_valid = rule {
+  all all_dynamodb_tables as _, table {
+    when table.change.after.tags is not null and
+         table.change.after.tags["Environment"] == "production" {
+      table.change.after.point_in_time_recovery_specification is not null
+    }
+  }
+}
+
+# Validate PITR is enabled
+dynamodb_pitr_enabled = rule {
+  all all_dynamodb_tables as _, table {
+    when table.change.after.point_in_time_recovery_specification is not null {
+      table.change.after.point_in_time_recovery_specification.point_in_time_recovery_enabled is true
+    }
+  }
+}
+
+# Validate backup is configured
+dynamodb_backup_valid = rule {
+  all all_dynamodb_tables as _, table {
+    when table.change.after.tags is not null and
+         table.change.after.tags["Environment"] == "production" {
+      table.change.after.tags["BackupEnabled"] == "true" or
+      table.change.after.point_in_time_recovery_specification is not null
+    }
+  }
+}
+
+# Validate billing mode (PAY_PER_REQUEST or PROVISIONED)
+dynamodb_billing_mode = rule {
+  all all_dynamodb_tables as _, table {
+    table.change.after.billing_mode is not null and
+    (table.change.after.billing_mode == "PAY_PER_REQUEST" or
+     table.change.after.billing_mode == "PROVISIONED")
+  }
+}
+
+# Validate table has tags
+dynamodb_tags = rule {
+  all all_dynamodb_tables as _, table {
+    table.change.after.tags is not null or
+    length(all_dynamodb_tables) == 0
+  }
+}
+
+# Validate attribute definitions
+dynamodb_attributes = rule {
+  all all_dynamodb_tables as _, table {
+    table.change.after.attribute is not null and
+    length(table.change.after.attribute) > 0
+  }
+}
+
+# Validate hash key is configured
+dynamodb_hash_key = rule {
+  all all_dynamodb_tables as _, table {
+    table.change.after.hash_key is not null and
+    table.change.after.hash_key != ""
+  }
+}
+
+main = rule {
+  dynamodb_encryption_valid and dynamodb_billing_mode and dynamodb_attributes and dynamodb_hash_key
+}

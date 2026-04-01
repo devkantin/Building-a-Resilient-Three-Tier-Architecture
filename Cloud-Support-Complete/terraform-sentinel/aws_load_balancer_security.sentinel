@@ -1,0 +1,112 @@
+import "tfplan"
+
+# Policy: AWS Load Balancer Security
+# Description: Enforces load balancer security and best practices
+# Requires: HTTPS, security groups, access logging, proper configuration
+
+# Find all Application Load Balancers
+all_albs = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_lb" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all load balancer target groups
+all_target_groups = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_lb_target_group" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all listeners
+all_listeners = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_lb_listener" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all listener rules
+all_listener_rules = filter tfplan.resource_changes as _, rc {
+  rc.type == "aws_lb_listener_rule" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate load balancers are in VPC
+alb_vpc_valid = rule {
+  all all_albs as _, alb {
+    alb.change.after.load_balancer_type == "network" or
+    (length(alb.change.after.subnets) > 0 or
+     length(alb.change.after.subnet_mapping) > 0)
+  }
+}
+
+# Validate load balancers have security groups
+alb_security_groups = rule {
+  all all_albs as _, alb {
+    when alb.change.after.load_balancer_type != "network" {
+      alb.change.after.security_groups is not null and
+      length(alb.change.after.security_groups) > 0
+    }
+  }
+}
+
+# Validate access logging is enabled for production
+alb_access_logging = rule {
+  all all_albs as _, alb {
+    when alb.change.after.tags is not null and
+         alb.change.after.tags["Environment"] == "production" {
+      alb.change.after.access_logs is not null
+    }
+  }
+}
+
+# Validate load balancer has tags
+alb_tags_valid = rule {
+  all all_albs as _, alb {
+    alb.change.after.tags is not null or
+    length(all_albs) == 0
+  }
+}
+
+# Validate listeners use HTTPS/TLS
+listener_https_valid = rule {
+  all all_listeners as _, listener {
+    (listener.change.after.protocol == "HTTPS" or
+     listener.change.after.protocol == "TLS" or
+     listener.change.after.protocol == "HTTP") and
+    listener.change.after.protocol is not null
+  }
+}
+
+# Enforce HTTPS redirect for production
+production_https_redirect = rule {
+  all all_listeners as _, listener {
+    when listener.change.after.protocol == "HTTP" {
+      listener.change.after.default_action is not null
+    }
+  }
+}
+
+# Validate target groups have health check
+target_group_health_check = rule {
+  all all_target_groups as _, tg {
+    tg.change.after.health_check is not null
+  }
+}
+
+# Validate health check has proper configuration
+health_check_valid = rule {
+  all all_target_groups as _, tg {
+    when tg.change.after.health_check is not null {
+      tg.change.after.health_check.healthy_threshold is not null and
+      tg.change.after.health_check.unhealthy_threshold is not null and
+      tg.change.after.health_check.interval is not null and
+      tg.change.after.health_check.matcher is not null
+    }
+  }
+}
+
+# Validate stickiness is configured appropriately
+target_group_stickiness = rule {
+  all all_target_groups as _, tg {
+    tg.change.after.stickiness is not null or
+    length(all_target_groups) == 0
+  }
+}
+
+main = rule {
+  alb_vpc_valid and listener_https_valid and target_group_health_check
+}
