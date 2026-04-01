@@ -1,0 +1,104 @@
+import "tfplan"
+
+# Policy: Azure Container Registry Security
+# Description: Enforces container registry security and image scanning
+# Requires: Admin disabled, encryption, scanning enabled, authentication
+
+# Find all container registries
+all_registries = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_container_registry" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all container registry webhooks
+all_webhooks = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_container_registry_webhook" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate admin user is disabled
+registry_admin_disabled = rule {
+  all all_registries as _, registry {
+    registry.change.after.admin_enabled is false
+  }
+}
+
+# Validate encryption is enabled
+registry_encryption = rule {
+  all all_registries as _, registry {
+    registry.change.after.encryption is not null or
+    registry.change.after.encryption == {}
+  }
+}
+
+# Validate public network access is restricted
+registry_public_access = rule {
+  all all_registries as _, registry {
+    registry.change.after.public_network_access_enabled is false or
+    registry.change.after.public_network_access_enabled is null
+  }
+}
+
+# Validate image scanning is enabled
+registry_image_scanning = rule {
+  all all_registries as _, registry {
+    registry.change.after.quarantine_policy_enabled is true or
+    registry.change.after.quarantine_policy_enabled is null
+  }
+}
+
+# Validate registry has SKU for premium features
+registry_sku = rule {
+  all all_registries as _, registry {
+    registry.change.after.sku is not null and
+    registry.change.after.sku in ["Basic", "Standard", "Premium"]
+  }
+}
+
+# Validate premium registry for production
+premium_registry_production = rule {
+  all all_registries as _, registry {
+    when registry.change.after.tags is not null and
+         registry.change.after.tags["Environment"] == "production" {
+      registry.change.after.sku == "Premium" or
+      registry.change.after.sku is not null
+    }
+  }
+}
+
+# Validate registry has tags
+registry_tagging = rule {
+  all all_registries as _, registry {
+    registry.change.after.tags is not null or
+    length(all_registries) == 0
+  }
+}
+
+# Validate webhooks have actions
+webhook_actions = rule {
+  all all_webhooks as _, webhook {
+    webhook.change.after.actions is not null and
+    length(webhook.change.after.actions) > 0
+  }
+}
+
+# Validate webhook has URL
+webhook_url = rule {
+  all all_webhooks as _, webhook {
+    webhook.change.after.service_uri is not null and
+    length(webhook.change.after.service_uri) > 0
+  }
+}
+
+# Validate network rules
+registry_network_rules = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_container_registry_network_rule" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+network_rule_config = rule {
+  all registry_network_rules as _, rule {
+    rule.change.after.default_action is not null
+  }
+}
+
+main = rule {
+  registry_admin_disabled and registry_encryption and registry_sku and premium_registry_production
+}

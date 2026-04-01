@@ -1,0 +1,96 @@
+import "tfplan"
+
+# Policy: Azure RBAC and Access Control
+# Description: Enforces role-based access control and principle of least privilege
+# Requires: RBAC role assignments, managed identities, no resource group owner roles
+
+# Find all role assignments
+all_role_assignments = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_role_assignment" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all managed identities
+all_managed_identities = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_user_assigned_identity" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all system-assigned identities on resources
+all_resources_with_identity = filter tfplan.resource_changes as _, rc {
+  (rc.type in ["azurerm_app_service", "azurerm_linux_virtual_machine", "azurerm_windows_virtual_machine"] or
+   rc.type contains "azurerm_") and
+  (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Restricted roles that should not be assigned to individual users
+restricted_roles = ["Owner", "User Access Administrator", "Contributor"]
+
+# Validate role assignments don't use restricted roles
+role_assignment_validity = rule {
+  all all_role_assignments as _, assignment {
+    when assignment.change.after.role_definition_name is not null {
+      assignment.change.after.role_definition_name not in restricted_roles or
+      assignment.change.after.scope contains "/resourceGroups/" == false
+    }
+  }
+}
+
+# Validate role assignments have scope
+role_assignment_scope = rule {
+  all all_role_assignments as _, assignment {
+    assignment.change.after.scope is not null and
+    length(assignment.change.after.scope) > 0
+  }
+}
+
+# Validate role assignments specify principal ID
+role_assignment_principal = rule {
+  all all_role_assignments as _, assignment {
+    assignment.change.after.principal_id is not null or
+    assignment.change.after.principal_id == ""
+  }
+}
+
+# Validate managed identities are used
+managed_identity_usage = rule {
+  all all_managed_identities as _, identity {
+    identity.change.after.name is not null and
+    length(identity.change.after.name) > 0
+  }
+}
+
+# Enforce system-assigned identities on resources
+system_managed_identity = rule {
+  all all_resources_with_identity as _, resource {
+    when (resource.type in ["azurerm_app_service", "azurerm_linux_virtual_machine"] and
+          resource.change.after.tags is not null and
+          resource.change.after.tags["Environment"] == "production") {
+      resource.change.after.identity is not null or
+      resource.change.after.identity == {}
+    }
+  }
+}
+
+# Validate admin consent is required for risky permissions
+risky_permissions = ["Microsoft.Authorization/*/Delete", "Microsoft.Authorization/roleAssignments/write"]
+
+# Find custom roles
+all_custom_roles = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_role_definition" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate custom roles don't grant risky permissions
+custom_role_permissions = rule {
+  all all_custom_roles as _, role {
+    when role.change.after.permissions is not null {
+      all role.change.after.permissions as _, perm {
+        all perm.actions as action {
+          action not in risky_permissions
+        }
+      }
+    }
+  }
+}
+
+main = rule {
+  role_assignment_validity and role_assignment_scope and system_managed_identity
+}

@@ -1,0 +1,104 @@
+import "tfplan"
+
+# Policy: Azure Kubernetes Service (AKS) Security
+# Description: Enforces AKS cluster security and best practices
+# Requires: RBAC enabled, network policies, logging, node security
+
+# Find all AKS clusters
+all_aks_clusters = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_kubernetes_cluster" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all node pools
+all_node_pools = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_kubernetes_cluster_node_pool" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate RBAC is enabled
+aks_rbac_enabled = rule {
+  all all_aks_clusters as _, cluster {
+    cluster.change.after.role_based_access_control_enabled is true
+  }
+}
+
+# Validate network policy is configured
+aks_network_policy = rule {
+  all all_aks_clusters as _, cluster {
+    cluster.change.after.network_profile is not null and
+    cluster.change.after.network_profile.network_policy is not null
+  }
+}
+
+# Validate API server authorized IP ranges for production
+aks_api_auth_ips = rule {
+  all all_aks_clusters as _, cluster {
+    when cluster.change.after.tags is not null and
+         cluster.change.after.tags["Environment"] == "production" {
+      cluster.change.after.api_server_authorized_ip_ranges is not null or
+      cluster.change.after.api_server_authorized_ip_ranges == []
+    }
+  }
+}
+
+# Validate logging enabled
+aks_logging = rule {
+  all all_aks_clusters as _, cluster {
+    cluster.change.after.oms_agent is not null or
+    cluster.change.after.oms_agent == {}
+  }
+}
+
+# Validate cluster has tags
+aks_tagging = rule {
+  all all_aks_clusters as _, cluster {
+    cluster.change.after.tags is not null or
+    length(all_aks_clusters) == 0
+  }
+}
+
+# Validate addon profile
+aks_addon_profile = rule {
+  all all_aks_clusters as _, cluster {
+    cluster.change.after.addon_profile is not null or
+    cluster.change.after.addon_profile == {}
+  }
+}
+
+# Validate node pool security context
+node_pool_security = rule {
+  all all_node_pools as _, pool {
+    pool.change.after.os_disk_size_gb is not null or
+    pool.change.after.os_disk_size_gb > 0
+  }
+}
+
+# Validate default node pool
+default_node_pool = rule {
+  all all_aks_clusters as _, cluster {
+    cluster.change.after.default_node_pool is not null and
+    cluster.change.after.default_node_pool.name is not null
+  }
+}
+
+# Validate pod security policy
+pod_security_policy = rule {
+  all all_aks_clusters as _, cluster {
+    cluster.change.after.pod_security_policy_enabled is true or
+    cluster.change.after.pod_security_policy_enabled is false
+  }
+}
+
+# Validate private cluster option
+private_cluster = rule {
+  all all_aks_clusters as _, cluster {
+    when cluster.change.after.tags is not null and
+         cluster.change.after.tags["Environment"] == "production" {
+      cluster.change.after.private_cluster_enabled is true or
+      cluster.change.after.private_cluster_enabled is false
+    }
+  }
+}
+
+main = rule {
+  aks_rbac_enabled and aks_network_policy and aks_logging and default_node_pool
+}

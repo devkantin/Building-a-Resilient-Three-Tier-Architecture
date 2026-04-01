@@ -1,0 +1,110 @@
+import "tfplan"
+
+# Policy: Azure Monitoring and Logging
+# Description: Enforces comprehensive monitoring and audit logging
+# Requires: Log Analytics, diagnostic settings, alerts, application insights
+
+# Find all Log Analytics workspaces
+all_log_workspaces = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_log_analytics_workspace" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all diagnostic settings
+all_diagnostics = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_monitor_diagnostic_setting" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all alert rules
+all_alerts = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_monitor_alert_rule" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+all_metric_alerts = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_monitor_metric_alert" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all application insights
+all_app_insights = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_application_insights" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate Log Analytics workspace SKU
+log_workspace_sku = rule {
+  all all_log_workspaces as _, workspace {
+    workspace.change.after.sku is not null and
+    workspace.change.after.sku in ["PerGB2018", "Standard", "Premium"]
+  }
+}
+
+# Validate Log Analytics retention
+log_workspace_retention = rule {
+  all all_log_workspaces as _, workspace {
+    workspace.change.after.retention_in_days is not null and
+    workspace.change.after.retention_in_days >= 30
+  }
+}
+
+# Validate Log Analytics has tags
+log_workspace_tags = rule {
+  all all_log_workspaces as _, workspace {
+    workspace.change.after.tags is not null or
+    length(all_log_workspaces) == 0
+  }
+}
+
+# Validate diagnostic settings have log destinations
+diagnostic_logs_enabled = rule {
+  all all_diagnostics as _, diag {
+    diag.change.after.log is not null or
+    diag.change.after.metric is not null
+  }
+}
+
+# Validate diagnostic settings have retention
+diagnostic_retention = rule {
+  all all_diagnostics as _, diag {
+    when diag.change.after.log is not null {
+      all diag.change.after.log as _, log {
+        log.retention_policy is not null or
+        log.enabled is true
+      }
+    }
+  }
+}
+
+# Validate alert rules have proper configuration
+alert_rule_valid = rule {
+  all all_alerts as _, alert {
+    alert.change.after.name is not null and
+    alert.change.after.is_enabled is true or
+    alert.change.after.is_enabled is null
+  }
+}
+
+# Validate metric alerts have threshold
+metric_alert_threshold = rule {
+  all all_metric_alerts as _, alert {
+    alert.change.after.threshold is not null and
+    alert.change.after.window_size is not null
+  }
+}
+
+# Validate metric alerts have criteria
+metric_alert_criteria = rule {
+  all all_metric_alerts as _, alert {
+    alert.change.after.criteria is not null and
+    length(alert.change.after.criteria) > 0
+  }
+}
+
+# Validate application insights
+app_insights_config = rule {
+  all all_app_insights as _, insights {
+    insights.change.after.application_type is not null and
+    insights.change.after.location is not null
+  }
+}
+
+main = rule {
+  log_workspace_sku and log_workspace_retention and diagnostic_logs_enabled and metric_alert_threshold
+}

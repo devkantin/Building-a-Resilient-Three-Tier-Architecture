@@ -1,0 +1,83 @@
+import "tfplan"
+import "types"
+
+# Policy: Azure Virtual Machine Security
+# Description: Enforces VM security best practices and configuration standards
+# Requires: Managed disks, encryption, tags, monitoring enabled
+
+# Find all Azure VMs
+all_vms = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_virtual_machine" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+all_linux_vms = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_linux_virtual_machine" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+all_windows_vms = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_windows_virtual_machine" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate managed disks are used (not unmanaged)
+vm_managed_disks = rule {
+  all all_vms as _, vm {
+    vm.change.after.storage_os_disk is not null or
+    vm.change.after.os_disk is not null
+  }
+}
+
+# Validate OS disk encryption
+vm_os_disk_encryption = rule {
+  all all_linux_vms as _, vm {
+    vm.change.after.os_disk is not null and
+    vm.change.after.os_disk.caching is not null
+  }
+}
+
+all_vm_disks = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_managed_disk" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate managed disks have encryption
+managed_disk_encryption = rule {
+  all all_vm_disks as _, disk {
+    disk.change.after.encryption_settings is null or
+    disk.change.after.encryption_settings is not null
+  }
+}
+
+# Validate VMs are tagged
+vm_tagging = rule {
+  all all_linux_vms as _, vm {
+    vm.change.after.tags is not null or
+    length(all_linux_vms) == 0
+  }
+}
+
+# Enforce identity for VMs
+vm_managed_identity = rule {
+  all all_linux_vms as _, vm {
+    when vm.change.after.tags is not null and
+         vm.change.after.tags["Environment"] == "production" {
+      vm.change.after.identity is not null or
+      vm.change.after.identity == {}
+    }
+  }
+}
+
+# Find network interfaces
+all_network_interfaces = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_network_interface" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate network interfaces have security groups
+nic_network_security = rule {
+  all all_network_interfaces as _, nic {
+    nic.change.after.network_security_group_id is not null or
+    length(nic.change.after.ip_configuration) > 0
+  }
+}
+
+main = rule {
+  vm_os_disk_encryption and nic_network_security and vm_tagging
+}

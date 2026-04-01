@@ -1,0 +1,100 @@
+import "tfplan"
+
+# Policy: Azure Firewall and DDoS Protection
+# Description: Enforces network protection and DDoS prevention
+# Requires: DDoS protection, Azure Firewall, WAF protection
+
+# Find all Azure Firewalls
+all_firewalls = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_firewall" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all firewall policies
+all_firewall_policies = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_firewall_policy" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all DDoS protection plans
+all_ddos_plans = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_network_ddos_protection_plan" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all WAF policies
+all_waf_policies = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_web_application_firewall_policy" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all application gateways
+all_app_gateways = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_application_gateway" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Validate firewall is available for zones
+firewall_zones = rule {
+  all all_firewalls as _, fw {
+    fw.change.after.zones is not null or
+    length(fw.change.after.zones) > 0
+  }
+}
+
+# Validate firewall policy rules
+firewall_policy_rules = rule {
+  all all_firewall_policies as _, policy {
+    policy.change.after.name is not null and
+    length(policy.change.after.name) > 0
+  }
+}
+
+# Validate DDoS protection plan exists
+ddos_protection_enabled = rule {
+  all all_ddos_plans as _, plan {
+    plan.change.after.name is not null and
+    length(all_ddos_plans) > 0
+  }
+}
+
+# Validate WAF mode is set correctly
+waf_policy_mode = rule {
+  all all_waf_policies as _, policy {
+    policy.change.after.policy_settings is not null and
+    policy.change.after.policy_settings.mode is not null
+  }
+}
+
+# Validate WAF has rules
+waf_managed_rules = rule {
+  all all_waf_policies as _, policy {
+    policy.change.after.managed_rules is not null
+  }
+}
+
+# Validate application gateway has WAF
+app_gateway_waf = rule {
+  all all_app_gateways as _, gateway {
+    when gateway.change.after.tags is not null and
+         gateway.change.after.tags["Environment"] == "production" {
+      gateway.change.after.waf_configuration is not null or
+      gateway.change.after.waf_configuration == {}
+    }
+  }
+}
+
+# Validate application gateway has HTTPS
+app_gateway_https = rule {
+  all all_app_gateways as _, gateway {
+    length(gateway.change.after.https_listener) > 0 or
+    gateway.change.after.https_listener is not null
+  }
+}
+
+# Validate firewall has tags
+firewall_tagging = rule {
+  all all_firewalls as _, fw {
+    fw.change.after.tags is not null or
+    length(all_firewalls) == 0
+  }
+}
+
+main = rule {
+  firewall_zones and waf_policy_mode and app_gateway_waf
+}

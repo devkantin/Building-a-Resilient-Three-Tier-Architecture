@@ -1,0 +1,102 @@
+import "tfplan"
+
+# Policy: Azure Network Security
+# Description: Enforces network security group rules and network isolation
+# Requires: Secure NSG rules, no overly permissive rules, restricted protocols
+
+# Find all network security groups
+all_nsgs = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_network_security_group" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all NSG rules
+all_nsg_rules = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_network_security_rule" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all subnets
+all_subnets = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_subnet" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Find all virtual networks
+all_vnets = filter tfplan.resource_changes as _, rc {
+  rc.type == "azurerm_virtual_network" and (rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
+# Dangerous CIDR (allows all IPs)
+dangerous_cidr = ["0.0.0.0/0", "*"]
+dangerous_ports = [22, 3389, 3306, 5432, 5984, 6379, 9200]
+
+# Validate NSG rules don't allow SSH from anywhere
+nsg_rule_ssh_restriction = rule {
+  all all_nsg_rules as _, rule {
+    when rule.change.after.direction == "Inbound" and
+         rule.change.after.destination_port_range in ["22", "*"] {
+      rule.change.after.source_address_prefix not in dangerous_cidr and
+      rule.change.after.source_address_prefixes not contains "0.0.0.0/0"
+    }
+  }
+}
+
+# Validate NSG rules don't allow RDP from anywhere
+nsg_rule_rdp_restriction = rule {
+  all all_nsg_rules as _, rule {
+    when rule.change.after.direction == "Inbound" and
+         rule.change.after.destination_port_range in ["3389", "*"] {
+      rule.change.after.source_address_prefix not in dangerous_cidr and
+      rule.change.after.source_address_prefixes not contains "0.0.0.0/0"
+    }
+  }
+}
+
+# Validate NSG rules restrict database ports
+nsg_rule_database_restriction = rule {
+  all all_nsg_rules as _, rule {
+    when rule.change.after.direction == "Inbound" and
+         (rule.change.after.destination_port_range in ["3306", "5432", "5984"] or
+          rule.change.after.destination_port_range == "*") {
+      rule.change.after.source_address_prefix not in dangerous_cidr
+    }
+  }
+}
+
+# Validate subnets have NSGs
+subnet_nsg_association = rule {
+  all all_subnets as _, subnet {
+    subnet.change.after.network_security_group_id is not null or
+    length(all_subnets) == 0
+  }
+}
+
+# Validate NSG rules specify access correctly
+nsg_rule_access_valid = rule {
+  all all_nsg_rules as _, rule {
+    rule.change.after.access is not null and
+    (rule.change.after.access == "Allow" or
+     rule.change.after.access == "Deny")
+  }
+}
+
+# Validate NSG has tags
+nsg_tagging = rule {
+  all all_nsgs as _, nsg {
+    nsg.change.after.tags is not null or
+    length(all_nsgs) == 0
+  }
+}
+
+# Validate VNet has DDoS protection enabled for production
+vnet_ddos_protection = rule {
+  all all_vnets as _, vnet {
+    when vnet.change.after.tags is not null and
+         vnet.change.after.tags["Environment"] == "production" {
+      vnet.change.after.ddos_protection_plan is not null or
+      vnet.change.after.ddos_protection_plan == {}
+    }
+  }
+}
+
+main = rule {
+  nsg_rule_ssh_restriction and nsg_rule_rdp_restriction and subnet_nsg_association and nsg_rule_access_valid
+}
