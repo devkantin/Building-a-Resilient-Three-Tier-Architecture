@@ -1,0 +1,67 @@
+# terraform.tfvars - Example configuration
+# Copy and modify this file with your specific values
+
+project_name   = "multi-region-app"
+environment    = "production"
+
+# Regions
+primary_region   = "us-east-1"
+secondary_region = "us-west-2"
+
+# VPC Configuration
+primary_vpc_cidr = "10.0.0.0/16"
+primary_public_subnets = {
+  "us-east-1a" = "10.0.1.0/24"
+  "us-east-1b" = "10.0.2.0/24"
+}
+primary_private_subnets = {
+  "us-east-1a" = "10.0.10.0/24"
+  "us-east-1b" = "10.0.11.0/24"
+}
+
+secondary_vpc_cidr = "10.1.0.0/16"
+secondary_public_subnets = {
+  "us-west-2a" = "10.1.1.0/24"
+  "us-west-2b" = "10.1.2.0/24"
+}
+secondary_private_subnets = {
+  "us-west-2a" = "10.1.10.0/24"
+  "us-west-2b" = "10.1.11.0/24"
+}
+
+# EC2 Instances
+web_instance_count = 2
+app_instance_count = 2
+db_instance_count  = 2
+
+instance_type_web = "t3.medium"
+instance_type_app = "t3.medium"
+instance_type_db  = "t3.large"
+
+# Database Configuration
+db_engine         = "postgres"
+db_engine_version = "15.2"
+db_instance_class = "db.t3.medium"
+allocated_storage = 100
+storage_type      = "gp3"
+
+db_username = "postgres"
+db_password = "ChangeMe123!"  # Change this!
+
+backup_retention_period = 30
+backup_window           = "03:00-04:00"
+multi_az                = true
+enable_backtrack        = false
+enable_iam_auth         = true
+
+# Route53 Configuration
+domain_name = "example.com"
+
+# Monitoring Configuration
+alarm_email = "ops@example.com"
+
+# Additional tags
+additional_tags = {
+  ManagedBy = "Terraform"
+  CostCenter = "Engineering"
+}
