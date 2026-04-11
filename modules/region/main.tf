@@ -34,7 +34,7 @@ data "aws_ami" "al2023" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# VPC — terraform-aws-modules/vpc/aws (Anton Babenko)
+# VPC - terraform-aws-modules/vpc/aws (Anton Babenko)
 # 3 tiers natively: public, web (private), db
 # ─────────────────────────────────────────────────────────────
 module "vpc" {
@@ -63,7 +63,7 @@ module "vpc" {
   tags = var.tags
 }
 
-# App-tier subnets — VPC module supports 3 tiers; app is the 4th
+# App-tier subnets - VPC module supports 3 tiers; app is the 4th
 resource "aws_subnet" "app" {
   count = length(var.availability_zones)
 
@@ -86,16 +86,16 @@ resource "aws_route_table_association" "app" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# Security Groups — terraform-aws-modules/security-group/aws
+# Security Groups - terraform-aws-modules/security-group/aws
 # ─────────────────────────────────────────────────────────────
 
-# External ALB — open to internet
+# External ALB - open to internet
 module "alb_ext_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "~> 5.0"
 
   name        = "${local.n}-alb-ext-sg"
-  description = "External ALB — HTTP/HTTPS from internet"
+  description = "External ALB - HTTP/HTTPS from internet"
   vpc_id      = module.vpc.vpc_id
 
   ingress_cidr_blocks = ["0.0.0.0/0"]
@@ -105,13 +105,13 @@ module "alb_ext_sg" {
   tags = var.tags
 }
 
-# Web servers — inbound from external ALB only
+# Web servers - inbound from external ALB only
 module "web_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "~> 5.0"
 
   name        = "${local.n}-web-sg"
-  description = "Web servers — HTTP from external ALB"
+  description = "Web servers - HTTP from external ALB"
   vpc_id      = module.vpc.vpc_id
 
   ingress_with_source_security_group_id = [
@@ -128,13 +128,13 @@ module "web_sg" {
   tags = var.tags
 }
 
-# Internal ALB — inbound from web servers
+# Internal ALB - inbound from web servers
 module "alb_int_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "~> 5.0"
 
   name        = "${local.n}-alb-int-sg"
-  description = "Internal ALB — HTTP from web servers"
+  description = "Internal ALB - HTTP from web servers"
   vpc_id      = module.vpc.vpc_id
 
   ingress_with_source_security_group_id = [
@@ -151,13 +151,13 @@ module "alb_int_sg" {
   tags = var.tags
 }
 
-# App servers — inbound from internal ALB only
+# App servers - inbound from internal ALB only
 module "app_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "~> 5.0"
 
   name        = "${local.n}-app-sg"
-  description = "App servers — port 8080 from internal ALB"
+  description = "App servers - port 8080 from internal ALB"
   vpc_id      = module.vpc.vpc_id
 
   ingress_with_source_security_group_id = [
@@ -174,13 +174,13 @@ module "app_sg" {
   tags = var.tags
 }
 
-# RDS — inbound from app servers only
+# RDS - inbound from app servers only
 module "rds_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "~> 5.0"
 
   name        = "${local.n}-rds-sg"
-  description = "RDS MySQL — port 3306 from app servers"
+  description = "RDS MySQL - port 3306 from app servers"
   vpc_id      = module.vpc.vpc_id
 
   ingress_with_source_security_group_id = [
@@ -197,13 +197,13 @@ module "rds_sg" {
   tags = var.tags
 }
 
-# Bastion — SSH from trusted CIDR
+# Bastion - SSH from trusted CIDR
 module "bastion_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "~> 5.0"
 
   name        = "${local.n}-bastion-sg"
-  description = "Bastion host — SSH from trusted CIDR"
+  description = "Bastion host - SSH from trusted CIDR"
   vpc_id      = module.vpc.vpc_id
 
   ingress_with_cidr_blocks = [
@@ -221,7 +221,7 @@ module "bastion_sg" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# External ALB — internet-facing, public subnets → web tier
+# External ALB - internet-facing, public subnets → web tier
 # terraform-aws-modules/alb/aws (Anton Babenko)
 # ─────────────────────────────────────────────────────────────
 module "alb_ext" {
@@ -231,6 +231,8 @@ module "alb_ext" {
   name    = "${local.n}-alb-ext"
   vpc_id  = module.vpc.vpc_id
   subnets = module.vpc.public_subnets
+
+  enable_deletion_protection = false
 
   security_groups = [module.alb_ext_sg.security_group_id]
 
@@ -266,7 +268,7 @@ module "alb_ext" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# Internal ALB — private, web subnets → app tier
+# Internal ALB - private, web subnets → app tier
 # ─────────────────────────────────────────────────────────────
 module "alb_int" {
   source  = "terraform-aws-modules/alb/aws"
@@ -276,6 +278,8 @@ module "alb_int" {
   vpc_id   = module.vpc.vpc_id
   subnets  = module.vpc.private_subnets
   internal = true
+
+  enable_deletion_protection = false
 
   security_groups = [module.alb_int_sg.security_group_id]
 
@@ -311,7 +315,7 @@ module "alb_int" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# Web-tier ASG — terraform-aws-modules/autoscaling/aws
+# Web-tier ASG - terraform-aws-modules/autoscaling/aws
 # Runs the Tooplate "Infinite Loop" HTML template via Apache
 # ─────────────────────────────────────────────────────────────
 module "web_asg" {
@@ -330,7 +334,7 @@ module "web_asg" {
   instance_type     = var.web_instance_type
   enable_monitoring = true
 
-  # IMDSv2 required — prevents SSRF credential theft (AWS-0130)
+  # IMDSv2 required - prevents SSRF credential theft (AWS-0130)
   metadata_options = {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
@@ -342,7 +346,7 @@ module "web_asg" {
     {
       device_name = "/dev/xvda"
       ebs = {
-        volume_size           = 20
+        volume_size           = 30
         volume_type           = "gp3"
         encrypted             = true
         delete_on_termination = true
@@ -352,19 +356,19 @@ module "web_asg" {
 
   security_groups = [module.web_sg.security_group_id]
 
-  # Apache + Tooplate 2117_infinite_loop template (user-supplied script)
+  # Apache + Tooplate 2117_infinite_loop template (Amazon Linux 2023)
   user_data = base64encode(<<-EOT
     #!/bin/bash
-    sudo apt update
-    sudo apt install -y wget unzip apache2 telnet
-    sudo systemctl start apache2
-    sudo systemctl enable apache2
-    sudo chmod -R 755 /var/www/html
-    sudo wget https://www.tooplate.com/zip-templates/2117_infinite_loop.zip
-    sudo unzip -o 2117_infinite_loop.zip
-    sudo cp -r 2117_infinite_loop/* /var/www/html/
-    sudo systemctl restart apache2
-    apache_status=$(sudo systemctl is-active apache2)
+    dnf update -y
+    dnf install -y wget unzip httpd telnet
+    systemctl start httpd
+    systemctl enable httpd
+    chmod -R 755 /var/www/html
+    wget https://www.tooplate.com/zip-templates/2117_infinite_loop.zip
+    unzip -o 2117_infinite_loop.zip
+    cp -r 2117_infinite_loop/* /var/www/html/
+    systemctl restart httpd
+    apache_status=$(systemctl is-active httpd)
     if [ "$apache_status" = "active" ]; then
       echo "Apache is running."
     else
@@ -415,7 +419,7 @@ module "app_asg" {
     {
       device_name = "/dev/xvda"
       ebs = {
-        volume_size           = 20
+        volume_size           = 30
         volume_type           = "gp3"
         encrypted             = true
         delete_on_termination = true
@@ -452,7 +456,7 @@ module "app_asg" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# Bastion Host — terraform-aws-modules/ec2-instance/aws
+# Bastion Host - terraform-aws-modules/ec2-instance/aws
 # ─────────────────────────────────────────────────────────────
 module "bastion" {
   source  = "terraform-aws-modules/ec2-instance/aws"
@@ -475,7 +479,7 @@ module "bastion" {
 
   root_block_device = [
     {
-      volume_size           = 20
+      volume_size           = 30
       volume_type           = "gp3"
       encrypted             = true
       delete_on_termination = true
@@ -540,7 +544,7 @@ resource "aws_flow_log" "this" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# RDS — Primary (Multi-AZ MySQL 8.0)
+# RDS - Primary (Multi-AZ MySQL 8.0)
 # terraform-aws-modules/rds/aws (Anton Babenko)
 # ─────────────────────────────────────────────────────────────
 resource "random_password" "db" {
@@ -595,7 +599,7 @@ module "rds" {
 }
 
 # ─────────────────────────────────────────────────────────────
-# RDS Read Replica — DR region
+# RDS Read Replica - DR region
 # ─────────────────────────────────────────────────────────────
 resource "aws_db_subnet_group" "dr_replica" {
   count = var.is_dr ? 1 : 0
@@ -614,6 +618,7 @@ resource "aws_db_instance" "replica" {
   instance_class      = var.db_instance_class
   storage_encrypted   = true
 
+  kms_key_id          = var.dr_kms_key_arn
   publicly_accessible    = false
   vpc_security_group_ids = [module.rds_sg.security_group_id]
   db_subnet_group_name   = aws_db_subnet_group.dr_replica[0].name

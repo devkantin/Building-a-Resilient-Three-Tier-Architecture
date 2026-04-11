@@ -92,6 +92,32 @@ resource "aws_cloudwatch_log_group" "route53_queries" {
   tags = var.tags
 }
 
+# Route53 requires a resource policy granting it permission to write to the log group.
+# The principal must be "route53.amazonaws.com" and the log group ARN must match exactly.
+data "aws_iam_policy_document" "route53_query_log" {
+  statement {
+    sid    = "AllowRoute53QueryLogs"
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["route53.amazonaws.com"]
+    }
+
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+
+    resources = ["${aws_cloudwatch_log_group.route53_queries.arn}:*"]
+  }
+}
+
+resource "aws_cloudwatch_log_resource_policy" "route53_query_log" {
+  policy_document = data.aws_iam_policy_document.route53_query_log.json
+  policy_name     = "${var.name}-route53-query-log-policy"
+}
+
 # ─────────────────────────────────────────────────────────────
 # WAF WebACL — scope CLOUDFRONT, must be in us-east-1
 # Attaches AWS Managed Rules: CRS + Known Bad Inputs
@@ -221,7 +247,7 @@ resource "aws_cloudfront_distribution" "this" {
 
   web_acl_id = aws_wafv2_web_acl.this.arn
 
-  aliases = [var.domain_name]
+  # aliases = [var.domain_name]  # Requires ACM cert; omitted for lab (use CloudFront default domain)
 
   # Primary origin — us-east-1 ALB
   origin {
@@ -277,7 +303,7 @@ resource "aws_cloudfront_distribution" "this" {
   }
 
   default_cache_behavior {
-    allowed_methods            = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
     cached_methods             = ["GET", "HEAD"]
     target_origin_id           = "primary-with-failover"
     viewer_protocol_policy     = "redirect-to-https"
@@ -407,7 +433,7 @@ resource "aws_wafv2_web_acl_logging_configuration" "this" {
 # Route53 query logs must be in us-east-1 CloudWatch
 # ─────────────────────────────────────────────────────────────
 resource "aws_route53_query_log" "this" {
-  depends_on = [aws_cloudwatch_log_group.route53_queries]
+  depends_on = [aws_cloudwatch_log_resource_policy.route53_query_log]
 
   cloudwatch_log_group_arn = aws_cloudwatch_log_group.route53_queries.arn
   zone_id                  = local.zone_id

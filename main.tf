@@ -11,6 +11,26 @@ locals {
 }
 
 # ─────────────────────────────────────────────────────────────
+# KMS key in DR region — required for cross-region encrypted RDS replica
+# ─────────────────────────────────────────────────────────────
+resource "aws_kms_key" "dr_rds" {
+  provider = aws.dr
+
+  description             = "${var.project}-${var.environment} DR RDS replica encryption key"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  tags = local.common_tags
+}
+
+resource "aws_kms_alias" "dr_rds" {
+  provider = aws.dr
+
+  name          = "alias/${var.project}-${var.environment}-dr-rds"
+  target_key_id = aws_kms_key.dr_rds.key_id
+}
+
+# ─────────────────────────────────────────────────────────────
 # PRIMARY REGION — us-east-1 (Active traffic)
 # ─────────────────────────────────────────────────────────────
 module "primary" {
@@ -85,6 +105,7 @@ module "dr" {
   deletion_protection     = var.deletion_protection
   is_dr                   = true
   primary_db_instance_arn = module.primary.db_instance_arn
+  dr_kms_key_arn          = aws_kms_key.dr_rds.arn
 
   tags = local.common_tags
 }

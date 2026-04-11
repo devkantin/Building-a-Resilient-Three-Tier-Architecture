@@ -128,3 +128,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "dr_kms_key_arn" {
+  description = "KMS key ARN in the DR region for encrypting the cross-region read replica. Required when is_dr = true."
+  type        = string
+  default     = null
+}
